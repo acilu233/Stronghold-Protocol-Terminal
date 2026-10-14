@@ -36,9 +36,9 @@ English summary: [below](#english).
 ## 目录
 
 - [声明](#声明) · [简介](#简介) · [功能一览](#功能一览)
-- [快速开始](#快速开始)：[下载 APK](#方式一下载-apk推荐) · [从源码构建](#方式二从源码构建) · [首次启动](#首次启动) · [系统要求](#系统要求)
+- [快速开始](#快速开始)：[下载 APK](#下载-apk) · [首次启动](#首次启动) · [系统要求](#系统要求)
 - [联机](#联机) · [操作](#操作) · [文档](#文档) · [项目结构](#项目结构)
-- [许可证](#许可证) · [致谢](#致谢) · [贡献](#贡献)
+- [从源码构建](#从源码构建开发者) · [许可证](#许可证) · [致谢](#致谢) · [贡献](#贡献)
 
 ## 简介
 
@@ -69,7 +69,7 @@ English summary: [below](#english).
 
 ## 快速开始
 
-### 方式一：下载 APK（推荐）
+### 下载 APK
 
 到 [Releases](../../releases/latest) 下载最新版本的 APK 安装即可：
 
@@ -78,19 +78,7 @@ English summary: [below](#english).
 
 要求 **Android 11+ / arm64-v8a**。首次安装若提示「未知来源」，允许即可。
 
-### 方式二：从源码构建
-
-> ⚠️ 本仓库的 `libnode.so`（约 117 MB）走 **Git LFS**，clone 前请先安装 [Git LFS](https://git-lfs.com)；只拿到指针文件时执行 `git lfs pull`。
-> 由于是空壳，构建**不需要**上游 `game/` 目录。
-
-```bash
-git clone https://github.com/acilu233/Stronghold-Protocol-Terminal.git
-cd Stronghold-Protocol-Terminal/android
-gradle assembleDebug     # 或 assembleRelease
-# 产物：app/build/outputs/apk/debug/app-debug.apk
-```
-
-需要 **JDK 17** + **Android SDK / NDK** + **Gradle 8.9**。版本号在 `android/app/build.gradle` 的 `versionCode` / `versionName`。
+> 只负责玩的话，看到这里就够了。想自己改代码 / 自己编译，见 [从源码构建](#从源码构建开发者)。
 
 ### 首次启动
 
@@ -174,6 +162,32 @@ Java 源码一览：
 | `UserStore.java` | 启动器侧账号系统 |
 
 > ⚠️ 维护约定：本文件描述当前目录结构，每次增删目录 / 文件后请同步更新本文件。
+
+## 从源码构建（开发者）
+
+> 这一节面向**想自己改启动器**的人（改注入脚本、改界面、改下载源等）。**只想玩的话，直接装 Releases 里的 APK 就行，不需要看这里。**
+
+本仓库是**空壳**，构建**不需要**上游 `game/` 目录。
+
+| 前置依赖 | 说明 |
+|---|---|
+| **JDK 17** | 编译 Java、运行 Gradle |
+| **Android SDK + NDK** | 打包 APK、编译 JNI 胶水层 |
+| **Gradle 8.9** | 仓库未附带 wrapper，需自行安装该版本 |
+| [**Git LFS**](https://git-lfs.com) | `libnode.so`（约 117 MB）走 LFS，没装只会拿到指针文件 |
+
+```bash
+git lfs install
+git clone https://github.com/acilu233/Stronghold-Protocol-Terminal.git
+cd Stronghold-Protocol-Terminal/android
+
+gradle assembleDebug     # 或 assembleRelease
+# 产物：app/build/outputs/apk/debug/app-debug.apk
+```
+
+> 若 `android/app/src/main/jniLibs/arm64-v8a/libnode.so` 只有几百字节，说明 LFS 没拉到，执行 `git lfs pull`。
+
+版本号在 `android/app/build.gradle` 的 `versionCode` / `versionName`。
 
 ## 许可证
 
