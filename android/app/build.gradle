@@ -82,13 +82,11 @@ android {
         checkReleaseBuilds false
     }
 
-    // 让 release 产物输出到独立目录，避免 packageRelease 清理旧目录时
-    // 被外部句柄（资源管理器预览 / IDE 索引等）锁死的旧 app-release.apk 卡住。
+    // release 产物文件名固定为 app-release.apk，输出到标准目录 build/outputs/apk/release/。
+    // ⚠️ 不要再用 packageApplicationProvider.outputDirectory 改输出目录：那样会让收尾任务
+    //    createReleaseApkListingFileRedirect 找不到 output-metadata.json → assembleRelease 直接失败。
     applicationVariants.all { variant ->
         if (variant.buildType.name == 'release') {
-            variant.packageApplicationProvider.configure { t ->
-                t.outputDirectory = file(layout.buildDirectory.dir("outputs/apk/release_dist"))
-            }
             variant.outputs.all { output -> output.outputFileName = 'app-release.apk' }
         }
     }
