@@ -146,6 +146,7 @@ English summary: [below](#english).
 | `android/app/src/main/assets/inject/` | 注入脚本（`inject.js` / `inject.css`），改游戏 UI 的唯一手段 |
 | `android/app/src/main/cpp/` | JNI 胶水（`node_bridge.cpp`）与 Node 公共头文件 |
 | `android/app/src/main/jniLibs/arm64-v8a/libnode.so` | 内嵌的 Node 运行时（**Git LFS**）|
+| `android/gradlew` · `android/gradle/wrapper/` | Gradle wrapper（8.9）：clone 后可直接 `./gradlew assembleDebug` |
 | `third-party/` | 第三方许可证全文 |
 
 Java 源码一览：
@@ -167,25 +168,51 @@ Java 源码一览：
 
 > 这一节面向**想自己改启动器**的人（改注入脚本、改界面、改下载源等）。**只想玩的话，直接装 Releases 里的 APK 就行，不需要看这里。**
 
-本仓库是**空壳**，构建**不需要**上游 `game/` 目录。
+本仓库是**空壳**，构建**不需要**上游 `game/` 目录（游戏本体是运行时下载的）。
 
-| 前置依赖 | 说明 |
+### 前置依赖
+
+| 依赖 | 版本 / 说明 |
 |---|---|
-| **JDK 17** | 编译 Java、运行 Gradle |
-| **Android SDK + NDK** | 打包 APK、编译 JNI 胶水层 |
-| **Gradle 8.9** | 仓库未附带 wrapper，需自行安装该版本 |
+| **JDK 17** | 设置好 `JAVA_HOME`；Gradle 与源码 `compileOptions` 都要求 17 |
+| **Android SDK** | 需 `compileSdk 34`（Android 14）平台 + 配套 `build-tools` |
+| **Android NDK** | **30.0.16138531**（须与 `app/build.gradle` 的 `ndkVersion` 一致）|
+| **CMake** | **3.22.1**（编译 JNI 胶水层；建议用 SDK Manager 安装）|
 | [**Git LFS**](https://git-lfs.com) | `libnode.so`（约 117 MB）走 LFS，没装只会拿到指针文件 |
+| **adb**（可选）| 装机调试用 |
+
+> Gradle **不需要你手动装** —— 仓库自带 wrapper，首次执行会自动下载 Gradle 8.9（约 130 MB，会存到 `~/.gradle`）。
+
+### 构建
 
 ```bash
-git lfs install
+git lfs install                                  # 一次性：启用 LFS
 git clone https://github.com/acilu233/Stronghold-Protocol-Terminal.git
 cd Stronghold-Protocol-Terminal/android
 
-gradle assembleDebug     # 或 assembleRelease
-# 产物：app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleDebug        # 调试版
+./gradlew assembleRelease      # 发布版
 ```
 
-> 若 `android/app/src/main/jniLibs/arm64-v8a/libnode.so` 只有几百字节，说明 LFS 没拉到，执行 `git lfs pull`。
+Windows / PowerShell 下用 **`gradlew.bat`** 代替 `./gradlew`。产物：
+
+| 构建类型 | 产物路径 |
+|---|---|
+| `assembleDebug` | `android/app/build/outputs/apk/debug/app-debug.apk` |
+| `assembleRelease` | `android/app/build/outputs/apk/release/app-release.apk` |
+
+关于 release 签名：`app/build.gradle` 里**有意**用 debug 密钥签 release 包（换正式密钥会导致手机上已装版本无法覆盖升级，且卸载会清掉存档）。想上应用商店时再换，届时务必先做存档迁移预案。
+
+联网说明：首次构建需要网络（下载 Gradle 发行包与 Android 构建依赖）；依赖齐备后可用 `./gradlew assembleDebug --offline` 离线构建。
+
+### 常见问题
+
+| 现象 | 处理 |
+|---|---|
+| `jniLibs/arm64-v8a/libnode.so` 只有几百字节 | LFS 没拉到 → `git lfs pull` |
+| 提示找不到 SDK / NDK / CMake | 在 `android/local.properties` 写入 `sdk.dir=<你的 SDK 路径>`，并用 SDK Manager 安装上表列出的 NDK 与 CMake 版本 |
+| `./gradlew` 报 `bad interpreter` 或 `^M` | 行尾被改成 CRLF 了 → `git config core.autocrlf false` 后重新检出该文件 |
+| 构建卡在下载 | 可在 `~/.gradle/init.gradle` 里配国内镜像仓库 |
 
 版本号在 `android/app/build.gradle` 的 `versionCode` / `versionName`。
 

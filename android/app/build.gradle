@@ -100,7 +100,7 @@ dependencies {
 //
 // 只把启动器自己的安卓入口 bootstrap/android-main.mjs 放进 assets/nodejs-project；
 // 游戏本体（代码 + 素材）在首次启动时由启动器从上游 Releases 下载后落位：
-//   · 首装：下载「精简包」-lite.zip（约 22MB）→ 解压；素材再由游戏自带 fetch-assets 下载
+//   · 首装：下载「完整包」<tag>.zip（约 556MB，含全部素材）→ 解压落位，一次到位
 //   · 更新：下载「更新包」-update.zip（约几 MB 增量）→ 覆盖
 // （libnode.so 是原生 Node 运行时，必须先于一切存在，仍随 APK 打包，见 jniLibs。）
 // ---------------------------------------------------------------------------

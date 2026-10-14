@@ -1,3 +1,8 @@
 # libnode.so ~117MB，超过 GitHub 100MB 单文件上限 → 走 Git LFS
 # （clone 需要本机安装 git-lfs：https://git-lfs.com）
 *.so filter=lfs diff=lfs merge=lfs -text
+
+# Gradle wrapper：gradlew 必须保持 LF（否则 Linux/macOS 上报 bad interpreter）
+gradlew text eol=lf
+*.bat text eol=crlf
+*.jar binary
