@@ -1,0 +1,119 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.stronghold.launcher'
+    compileSdk 34
+    ndkVersion '30.0.16138531'
+
+    defaultConfig {
+        applicationId "com.stronghold.launcher"
+        minSdk 30
+        targetSdk 34
+        versionCode 1
+        versionName "0.1"
+
+        ndk {
+            // 主目标是真机（arm64）。x86_64 那份 libnode.so 仍在 jniLibs 里躺着，
+            // 哪天真要在模拟器上跑，把 'x86_64' 加回来即可。
+            abiFilters 'arm64-v8a'
+        }
+
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17', '-fexceptions', '-frtti'
+                arguments '-DANDROID_STL=c++_shared'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            jniDebuggable true
+        }
+        release {
+            minifyEnabled false
+            shrinkResources false
+            // ⚠️ 这里**有意**用 debug 密钥签 release，别"顺手改正规"。
+            //
+            // 原因（2026-10-12 与用户确认）：
+            //   · 用户自己装自己用 + 小范围分发，debug 签名完全够；
+            //   · 换成正式 keystore 会改变签名 → 手机上已装的版本**无法覆盖升级**，
+            //     必须先卸载，而卸载会清掉 SharedPreferences（用户目录/存档）和
+            //     filesDir（联机继承的数据），等于用户重来一遍；
+            //   · 正式密钥还得永久保管，丢了以后永远不能给这个 App 升级。
+            // 真要上 Play 商店时再换，届时务必先做好存档迁移预案。
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            // libnode.so 未压缩就有 117 MB。必须让它压缩进 APK（安装时解压到 lib/），
+            // 否则光是这个 .so 就能把 APK 顶到 150 MB 以上。
+            useLegacyPackaging true
+        }
+        resources {
+            excludes += ['META-INF/*.kotlin_module', 'META-INF/DEPENDENCIES', 'META-INF/LICENSE*']
+        }
+    }
+
+    // assets 里的 nodejs-project 已经是压缩过的内容，跳过再压缩，加快打包
+    androidResources {
+        noCompress += ['gz', 'zip']
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+
+    // 让 release 产物输出到独立目录，避免 packageRelease 清理旧目录时
+    // 被外部句柄（资源管理器预览 / IDE 索引等）锁死的旧 app-release.apk 卡住。
+    applicationVariants.all { variant ->
+        if (variant.buildType.name == 'release') {
+            variant.packageApplicationProvider.configure { t ->
+                t.outputDirectory = file(layout.buildDirectory.dir("outputs/apk/release_dist"))
+            }
+            variant.outputs.all { output -> output.outputFileName = 'app-release.apk' }
+        }
+    }
+}
+
+dependencies {
+}
+
+// ---------------------------------------------------------------------------
+// 空壳启动器：APK **不再内置任何游戏代码 / 依赖 / 素材**。
+//
+// 只把启动器自己的安卓入口 bootstrap/android-main.mjs 放进 assets/nodejs-project；
+// 游戏本体（代码 + 素材）在首次启动时由启动器从上游 Releases 下载后落位：
+//   · 首装：下载「精简包」-lite.zip（约 22MB）→ 解压；素材再由游戏自带 fetch-assets 下载
+//   · 更新：下载「更新包」-update.zip（约几 MB 增量）→ 覆盖
+// （libnode.so 是原生 Node 运行时，必须先于一切存在，仍随 APK 打包，见 jniLibs。）
+// ---------------------------------------------------------------------------
+task assembleNodePayload {
+    doLast {
+        def dst = file('src/main/assets/nodejs-project')
+        def bootstrap = file('bootstrap/android-main.mjs')
+        delete dst
+        dst.mkdirs()
+        copy { from bootstrap; into dst }
+        println '[payload] bare shell: bundled only android-main.mjs'
+    }
+}
+preBuild.dependsOn assembleNodePayload

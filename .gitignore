@@ -1,0 +1,47 @@
+# ===== 构建产物 =====
+**/build/
+**/node_modules/
+**/.gradle/
+.gradle/
+captures/
+
+# ===== 本地配置（含 SDK 路径，不入库）=====
+**/local.properties
+*.iml
+.idea/
+
+# ===== 安装包 / 二进制 =====
+*.apk
+*.aab
+
+# ===== 本地构建工作目录（含预下载 gradle，需本地自建，不入库）=====
+/_android-build/
+
+# ===== 上游游戏资源（由上游仓库单独提供，不入库）=====
+/game/
+
+# ===== 桌面端 / 无关脚本（不入库）=====
+/launcher/
+/启动游戏.cmd
+
+# ===== 调试 / 临时残留（仅仓库根，防御性）=====
+/_*
+/K70-*.png
+/全屏修复验证.png
+/*安装包备份*
+
+# ===== CMake / 原生构建缓存 =====
+**/.cxx/
+
+# ===== 由 assembleNodePayload 从 game/ 生成的 payload（构建产物，不入库）=====
+/android/app/src/main/assets/nodejs-project/
+
+# ===== 反编译取证的临时产物（不入库）=====
+/android/_allx/
+/android/_apkx_new/
+
+# ===== 工具 / 会话数据 =====
+/.workbuddy/
+
+# ===== 日志 =====
+*.log

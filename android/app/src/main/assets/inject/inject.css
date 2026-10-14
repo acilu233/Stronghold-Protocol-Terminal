@@ -1,0 +1,536 @@
+/* ==========================================================================================
+   inject.css — 安卓启动器注入样式（由 MainActivity.shouldInterceptRequest 注入到 index.html）
+
+   设计原则：
+     1. 本文件只负责「启动器自有 UI」的样式 + 少量触摸目标补偿 + 安全区压平。
+        （曾经的「界面缩放」已按用户要求整体移除 —— zoom 只能放大控件，
+          棋盘是 canvas，按 clientWidth 绘制，物理尺寸恒定不变。）
+     2. 所有类名一律 xj- 前缀，避免和游戏自身的类名撞车。
+     3. 不依赖任何构建步骤，纯 CSS。
+   ========================================================================================== */
+
+/* ------------------------------------------------------------------------------------------
+   0. 安全区压平（挖孔屏「铺满整屏」的关键）
+   ------------------------------------------------------------------------------------------
+   game/public/css/devices.css 里有作者**有意为之**的设计：
+
+     :root { --sa-l: env(safe-area-inset-left, 0px); ... }
+     .screen:not(.gm) { top: var(--sa-t); right: var(--sa-r); bottom: var(--sa-b); left: var(--sa-l); }
+
+   注释原文："every other screen is laid out inside the safe area (the app backdrop fills the
+   notch strip)" —— 即非对局界面故意缩进挖孔宽度，避免按钮被摄像头遮挡。
+
+   但启动器要求「铺满整屏」。native 层设 layoutInDisplayCutoutMode=shortEdges 只能让
+   **窗口**铺满，WebView 仍会向网页暴露 env(safe-area-inset-left)（K70 实测 40px =
+   挖孔 104px / dpr 2.625），游戏 CSS 读到这个值就自己缩进了。
+
+   由于 game/ 目录禁止修改，这里从**外部**把安全区变量压成 0：
+     · 覆盖 --sa-* 四个变量 → 所有引用它们的地方自动归零
+     · 额外显式重置 .screen:not(.gm) 的定位，避免有地方直接写 env() 而不走变量
+
+   代价：挖孔会物理遮挡左侧一小块。K70 实测该区域只有背景光晕，无关键 UI。 */
+:root {
+  --sa-t: 0px !important;
+  --sa-r: 0px !important;
+  --sa-b: 0px !important;
+  --sa-l: 0px !important;
+}
+
+/* 兜底：万一某处直接用 env() 而非变量，这里也一并压平 */
+.screen:not(.gm) {
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  left: 0 !important;
+}
+
+/* ------------------------------------------------------------------------------------------
+   1. 触摸目标：手机上 .btn--sm 的高度只有 .36rem = 14.4px，点不准。
+      只抬高「高度相关」的尺寸，不改文字大小，也不改任何父级布局 —— 唯一后果是按钮更高一点。
+   ------------------------------------------------------------------------------------------ */
+html.xj-touch .btn--sm {
+  height: .46rem;
+  min-width: .46rem;
+}
+html.xj-touch .btn--sm.btn--square {
+  min-width: .46rem;
+}
+/* 同盟密钥的输入框 / 复制按钮所在行，手机上加一点行高让手指好点 */
+html.xj-touch .join-row .btn,
+html.xj-touch .join-row .field__box {
+  min-height: .58rem;
+}
+
+/* ------------------------------------------------------------------------------------------
+   2. 启动器附加面板（联机方式）—— 只出现在大厅「加入同盟」栏下方
+   ------------------------------------------------------------------------------------------
+   手机横屏视口只有 785x392，整个面板必须压到 ~120px 内，否则会把「加入同盟」栏挤出屏幕。
+   所以这里一律用紧凑排版：标题与控件同一行、去掉多余留白。 */
+
+.xj-netmode {
+  margin-top: .12rem;
+  padding: .12rem .18rem .14rem;
+  border: 1px solid #2f3a35;
+  background: rgba(8, 10, 9, .55);
+  position: relative;
+}
+
+/* 每一行：左标题 + 右控件，同一行排完 */
+.xj-row {
+  display: flex;
+  align-items: center;
+  gap: .14rem;
+  min-height: .34rem;
+}
+
+.xj-row + .xj-row {
+  margin-top: .08rem;
+}
+
+.xj-row__label {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: .06rem;
+  font-size: calc(.16 * var(--t));
+  font-weight: 700;
+  color: #c3cbc7;
+  white-space: nowrap;
+}
+
+.xj-row__micro {
+  font-size: calc(.1 * var(--t));
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #5d6863;
+}
+
+.xj-row__ctl {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: .1rem;
+  justify-content: flex-end;
+}
+
+/* 两段式切换开关 */
+.xj-seg {
+  display: inline-flex;
+  border: 1px solid #3e4b45;
+  background: rgba(0, 0, 0, .3);
+  flex: none;
+}
+
+.xj-seg__opt {
+  height: .38rem;
+  padding: 0 .16rem;
+  border: 0;
+  background: transparent;
+  color: #8a948f;
+  font-size: calc(.16 * var(--t));
+  font-weight: 700;
+  letter-spacing: .04em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 150ms, background-color 150ms;
+}
+
+.xj-seg__opt + .xj-seg__opt {
+  border-left: 1px solid #3e4b45;
+}
+
+.xj-seg__opt.is-on {
+  background: rgba(78, 216, 175, .12);
+  color: #59f4ca;
+}
+
+.xj-seg__opt:active {
+  background: rgba(78, 216, 175, .18);
+}
+
+/* 外部连接：网址输入行（占满整行，跟在两行之后） */
+.xj-host {
+  display: none;
+  gap: .1rem;
+  align-items: stretch;
+  margin-top: .1rem;
+}
+
+.xj-netmode[data-mode="wan"] .xj-host {
+  display: flex;
+}
+
+.xj-host__box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: .42rem;
+  padding: 0 .14rem;
+  border: 1px solid #3e4b45;
+  background: rgba(0, 0, 0, .35);
+}
+
+.xj-host__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #f2f2f2;
+  font-size: calc(.16 * var(--t));
+  outline: none;
+  /* 用户可以选中/编辑，游戏全局禁用了 user-select */
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.xj-host__input::placeholder {
+  color: #5d6863;
+}
+
+.xj-host__save {
+  flex: none;
+  height: .42rem;
+  min-width: .76rem;
+  padding: 0 .16rem;
+  border: 1px solid #2a9e7f;
+  background: #1a201d;
+  color: #59f4ca;
+  font-size: calc(.16 * var(--t));
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.xj-host__save:active {
+  background: #222a26;
+}
+
+/* 「进入」—— 网址为空时置灰不可点（用户要求） */
+.xj-host__enter:disabled,
+.xj-host__save:disabled {
+  border-color: #2a3438;
+  background: #141a18;
+  color: #4a5a56;
+  cursor: default;
+}
+.xj-host__enter:disabled:active { background: #141a18; }
+
+/* 提示：只在有实质信息时显示，单行省略，避免把面板撑高 */
+.xj-hint {
+  margin-top: .08rem;
+  font-size: calc(.13 * var(--t));
+  line-height: 1.35;
+  color: #8a948f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xj-hint b {
+  color: #f6a329;
+  font-weight: 700;
+}
+
+.xj-hint code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: #9fd4ff;
+  background: rgba(159, 212, 255, .1);
+  padding: 0 .06rem;
+}
+
+/* ------------------------------------------------------------------------------------------
+   3. 由启动器接管「复制链接」时的提示（可选，非必须）
+   ------------------------------------------------------------------------------------------ */
+.xj-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 8%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  padding: .14rem .3rem;
+  border: 1px solid #2a9e7f;
+  background: rgba(8, 10, 9, .94);
+  color: #59f4ca;
+  font-size: calc(.17 * var(--t));
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+
+.xj-toast.is-on {
+  opacity: 1;
+}
+
+/* ------------------------------------------------------------------------------------------
+   4. 用户账号：标题页「开始」右边的「用户」按钮 + 用户列表弹窗
+   ------------------------------------------------------------------------------------------ */
+
+/* 「用户」按钮 —— 紧跟在游戏自己的「开始」按钮后面，所以宽度不铺满 */
+.xj-ubtn {
+  display: block;
+  width: 100%;
+  margin-top: .1rem;
+  min-height: .58rem;
+  padding: 0 .2rem;
+  border: 1px solid rgba(200, 169, 106, .5);
+  background: rgba(20, 26, 24, .82);
+  color: #c8a96a;
+  font-family: inherit;
+  font-size: calc(.19 * var(--t));
+  letter-spacing: .04em;
+  cursor: pointer;
+  transition: background 140ms, border-color 140ms;
+}
+.xj-ubtn:active {
+  background: rgba(200, 169, 106, .16);
+  border-color: #c8a96a;
+}
+.xj-ubtn.is-empty {
+  color: #7e8fa0;
+  border-color: rgba(126, 143, 160, .45);
+}
+
+/* 弹窗遮罩 */
+.xj-umask {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 上下留白收窄：横屏手机上视口只有 ~392px 高，留 0.8t（=32px）×2 太奢侈，
+     会把弹窗可用的高度吃掉 64px，直接导致列表被挤到只剩两行。 */
+  padding: calc(.35 * var(--t)) calc(.4 * var(--t));
+  box-sizing: border-box;
+  background: rgba(4, 6, 5, .72);
+}
+
+/* 弹窗主体 —— 以 --t 为量纲（实测 --t = 40px），随游戏「文本大小」设置一起缩放。
+   ⚠️ 系数换算基准：--t 在手机上 = 1rem = 40px。想要 N px 就写 calc(N/40 * var(--t))。 */
+.xj-umodal {
+  width: min(78vw, calc(14 * var(--t)));
+  height: auto;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: calc(.5 * var(--t));
+  border: 1px solid #2c3a35;
+  background: #0e141b;
+  color: #d8e3de;
+  font-size: calc(.45 * var(--t));
+  box-shadow: 0 calc(.2 * var(--t)) calc(.7 * var(--t)) rgba(0, 0, 0, .6);
+}
+
+.xj-umodal__head {
+  display: flex;
+  align-items: baseline;
+  gap: calc(.3 * var(--t));
+  padding-bottom: calc(.3 * var(--t));
+  border-bottom: 1px solid #223;
+}
+.xj-umodal__title {
+  font-size: calc(.55 * var(--t));
+  color: #c8a96a;
+  letter-spacing: .06em;
+}
+.xj-umodal__micro {
+  font-size: calc(.33 * var(--t));
+  color: #5e7183;
+  margin-right: auto;
+}
+.xj-umodal__x {
+  border: 0;
+  background: transparent;
+  color: #7e8fa0;
+  font-size: calc(.62 * var(--t));
+  line-height: 1;
+  padding: 0 calc(.2 * var(--t));
+  cursor: pointer;
+}
+.xj-umodal__x:active { color: #d8e3de; }
+
+/* 用户列表 —— 高度自适应内容，超过上限才滚动。
+   ⚠️ 之前写的是 flex:0 1 auto + max-height:calc(11*var(--t))，有两个问题：
+     ① max-height 是按 --t(=40px) 算的 440px，**比整个横屏视口(392px)还高**，等于没限制；
+     ② flex-shrink:1 让它在弹窗高度吃紧时被压到比内容还矮 → 第 3 个用户直接被裁掉、
+        只能靠滚轮找，看起来就像"列表小了 / 用户名显示不全"。
+   现在改成：优先占满剩余空间(flex:1)，但用 **vh** 兜底限定真实可用高度，
+   并给一个合理的 min-height，保证至少能看全 3 行。 */
+.xj-ulist {
+  margin: calc(.28 * var(--t)) 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  min-height: 0;
+  /* 上限取「11 个字符高」和「视口 52%」的较小者 —— 后者才是横屏手机上真正管用的约束 */
+  max-height: min(calc(11 * var(--t)), 52vh);
+}
+.xj-urow {
+  display: flex;
+  align-items: center;
+  gap: calc(.3 * var(--t));
+  /* padding 从 .38t 收到 .26t：一行从 68px 降到约 49px，
+     392px 高的横屏上能多塞下一行半，用户不用滚就能看全自己建的几个人。 */
+  padding: calc(.26 * var(--t)) calc(.28 * var(--t));
+  border: 1px solid transparent;
+  border-bottom-color: rgba(44, 58, 53, .6);
+  cursor: pointer;
+}
+.xj-urow.is-on { border-color: #2a9e7f; background: rgba(42, 158, 127, .1); }
+.xj-urow:active { background: rgba(255, 255, 255, .05); }
+
+.xj-urow__dot {
+  width: calc(.3 * var(--t));
+  height: calc(.3 * var(--t));
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 2px solid #5e7183;
+}
+.xj-urow.is-on .xj-urow__dot {
+  background: #59f4ca;
+  border-color: #59f4ca;
+}
+.xj-urow__name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(.48 * var(--t));
+}
+.xj-urow__cur {
+  flex: 0 0 auto;
+  font-size: calc(.33 * var(--t));
+  color: #59f4ca;
+  border: 1px solid rgba(89, 244, 202, .5);
+  padding: calc(.05 * var(--t)) calc(.18 * var(--t));
+}
+.xj-urow__acts {
+  display: flex;
+  gap: calc(.2 * var(--t));
+  flex: 0 0 auto;
+}
+.xj-uact {
+  border: 1px solid #2c3a35;
+  background: transparent;
+  color: #9fb0bd;
+  font-family: inherit;
+  font-size: calc(.36 * var(--t));
+  padding: calc(.16 * var(--t)) calc(.34 * var(--t));
+  cursor: pointer;
+}
+.xj-uact:active { background: rgba(255, 255, 255, .06); }
+.xj-uact--danger { color: #d2867e; border-color: rgba(210, 134, 126, .45); }
+.xj-uact--danger:active { background: rgba(210, 134, 126, .14); }
+
+.xj-uhint {
+  margin: calc(.3 * var(--t)) 0;
+  color: #5e7183;
+  font-size: calc(.42 * var(--t));
+}
+
+/* 创建新用户 */
+.xj-ucreate {
+  display: flex;
+  gap: calc(.28 * var(--t));
+  padding-top: calc(.34 * var(--t));
+  border-top: 1px solid #223;
+}
+.xj-ucreate__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: calc(1.5 * var(--t));
+  padding: 0 calc(.35 * var(--t));
+  border: 1px solid #2c3a35;
+  background: rgba(8, 12, 11, .8);
+  color: #e8e2d0;
+  font-family: inherit;
+  font-size: calc(.45 * var(--t));
+}
+.xj-ucreate__input:focus {
+  outline: none;
+  border-color: #2a9e7f;
+}
+.xj-ucreate__input:disabled {
+  color: #4a5a66;
+  border-color: #1c2429;
+}
+.xj-ucreate__btn {
+  flex: 0 0 auto;
+  height: calc(1.5 * var(--t));
+  padding: 0 calc(.7 * var(--t));
+  border: 1px solid #2a9e7f;
+  background: rgba(42, 158, 127, .16);
+  color: #59f4ca;
+  font-family: inherit;
+  font-size: calc(.45 * var(--t));
+  cursor: pointer;
+}
+.xj-ucreate__btn:active { background: rgba(42, 158, 127, .3); }
+.xj-ucreate__btn:disabled {
+  border-color: #1c2429;
+  background: transparent;
+  color: #4a5a66;
+  cursor: default;
+}
+
+/* ==========================================================================================
+ * 战绩主 / 客标签
+ * 贴在「对局记录」表格「模式」列里的一个小方块。--t 在手机上 = 1rem = 40px（实测）。
+ * ========================================================================================== */
+.xj-side {
+  display: inline-block;
+  margin-left: calc(.16 * var(--t));
+  padding: 0 calc(.16 * var(--t));
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-style: normal;
+  font-size: calc(.3 * var(--t));
+  line-height: calc(.46 * var(--t));
+  vertical-align: middle;
+  opacity: .9;
+}
+.xj-side[data-side="host"] { color: #ffd479; }   /* 主：暖金 */
+.xj-side[data-side="guest"] { color: #7fd4ff; }  /* 客：冷蓝 */
+
+/* ==========================================================================================
+ * 「返回本地」浮球 —— 半透明、可拖动、只在远程房出现
+ * 原来是左上角一个实心按钮，用户要求改成半透明可拖着走的小球。
+ *
+ * ⚠️ 【当前是死代码，别误读】这个球最终由**原生侧**实现：
+ *    MainActivity 里的 homeBtn（TextView + GradientDrawable 圆形底），
+ *    拖动逻辑在 installHomeBallTouch()，位置记忆在 SharedPreferences ballX/ballY。
+ *    网页侧从来不会创建 .xj-homeball 节点（inject.js 里搜不到这个类名）。
+ *    留着是因为：① 删了不改变任何行为但也没收益；② 万一以后想把浮球挪回网页层
+ *    （比如要跟随游戏内缩放），这套样式是现成的起点。
+ * ========================================================================================== */
+.xj-homeball {
+  position: fixed;
+  z-index: 9998;
+  width: calc(1.6 * var(--t));
+  height: calc(1.6 * var(--t));
+  border-radius: 50%;
+  border: 1px solid rgba(232, 226, 208, .5);
+  background: rgba(27, 37, 48, .55);
+  color: rgba(232, 226, 208, .92);
+  font-family: inherit;
+  font-size: calc(.36 * var(--t));
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0;
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 calc(.06 * var(--t)) calc(.2 * var(--t)) rgba(0, 0, 0, .45);
+  transition: opacity .16s ease, transform .16s ease;
+  opacity: .62;
+}
+.xj-homeball:active { opacity: .95; transform: scale(.94); }
+.xj-homeball.is-dragging { opacity: .95; transition: none; }
+/* 拖动中不想要文字选中 / 长按菜单 */
+.xj-homeball * { pointer-events: none; }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 盾牌轮廓 -->
+    <path
+        android:fillColor="#C8A96A"
+        android:pathData="M54,26 L76,35 L76,55 C76,68 66,78 54,84 C42,78 32,68 32,55 L32,35 Z" />
+    <!-- 内部深色盾心 -->
+    <path
+        android:fillColor="#10161E"
+        android:pathData="M54,33 L69,39.5 L69,55 C69,64.5 62,72.5 54,77.5 C46,72.5 39,64.5 39,55 L39,39.5 Z" />
+    <!-- 十字剑形 -->
+    <path
+        android:fillColor="#C8A96A"
+        android:pathData="M52,42 L56,42 L56,68 L52,68 Z" />
+    <path
+        android:fillColor="#C8A96A"
+        android:pathData="M45,48 L63,48 L63,52 L45,52 Z" />
+</vector>
