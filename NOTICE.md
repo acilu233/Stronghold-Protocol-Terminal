@@ -1,6 +1,6 @@
 # 版权与使用声明（NOTICE）
 
-**卫戍协议：盟约 · 安卓启动器**（本仓库）是为上游同人复刻《卫戍协议：盟约 · Stronghold Protocol》
+**卫戍协议：终端**（本仓库）是为上游同人复刻《卫戍协议：盟约 · Stronghold Protocol》
 （GitHub：`sganggs/Stronghold-Protocol`）编写的**非官方安卓启动器壳**。
 
 本启动器与上游项目作者、与上海鹰角网络科技有限公司（Hypergryph）、Yostar 及其关联方

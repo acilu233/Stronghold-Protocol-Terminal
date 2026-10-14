@@ -1,6 +1,6 @@
 # 卫戍协议：终端 · Stronghold-Protocol: Terminal
 
-《明日方舟》季节玩法「卫戍协议：盟约」的**非官方同人复刻**（[sganggs/Stronghold-Protocol](https://github.com/sganggs/Stronghold-Protocol)）的**安卓启动器**：把整套 Node.js 游戏运行时塞进一个安卓 App，用手机即开即玩，无需电脑、无需 Root。
+**卫戍协议：终端**是《明日方舟》季节玩法「卫戍协议：盟约」**非官方同人复刻**（[sganggs/Stronghold-Protocol](https://github.com/sganggs/Stronghold-Protocol)）的**安卓启动器**：把整套 Node.js 游戏运行时塞进一个安卓 App，用手机即开即玩，无需电脑、无需 Root。
 
 ![version](https://img.shields.io/badge/version-0.1-2ea44f)
 ![license](https://img.shields.io/badge/code%20license-GPL--3.0--or--later-blue)

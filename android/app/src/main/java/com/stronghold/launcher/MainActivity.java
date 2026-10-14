@@ -621,7 +621,7 @@ public class MainActivity extends Activity {
         content.addView(splashHex, hexLp);
 
         TextView title = new TextView(this);
-        title.setText("卫戍协议：盟约");
+        title.setText("卫戍协议：终端");
         title.setTextColor(Color.parseColor("#59F4CA"));      // --mint-400
         title.setTextSize(30f);
         title.setTypeface(Typeface.DEFAULT_BOLD);

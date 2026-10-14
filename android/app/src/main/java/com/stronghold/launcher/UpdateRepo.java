@@ -53,7 +53,7 @@ public final class UpdateRepo {
 
     public static final class Latest {
         public String tag;      // v0.2.6
-        public String name;     // 卫戍协议：盟约 v0.2.6
+        public String name;     // 上游 release 标题（取自 GitHub Releases）
         public String notes;    // 更新日志（已去 HTML，纯文本）
         public String pageUrl;  // 发布页
         public String err;
