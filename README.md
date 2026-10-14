@@ -133,7 +133,6 @@ English summary: [below](#english).
 | 文档 | 内容 |
 |---|---|
 | [README.md](README.md) | 本文件：项目介绍与使用方法 |
-| [HANDOFF.md](HANDOFF.md) | 开发交接：当前状态、硬约束、修改日志 |
 | [NOTICE.md](NOTICE.md) | 版权与使用声明 |
 | [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) | 第三方组件清单（含 Node.js 许可证全文）|
 
