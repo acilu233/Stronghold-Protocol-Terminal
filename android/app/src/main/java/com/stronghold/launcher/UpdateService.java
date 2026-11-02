@@ -24,7 +24,10 @@ import java.io.File;
 public class UpdateService extends Service {
     private static final String TAG = "SHL-Update";
     public static final String CHANNEL_ID = "stronghold-update";
+    /** 「更新已就绪」独立通知：不绑前台服务，进程被杀后仍保留，用户点一下即可回到新版本。 */
+    private static final String CHANNEL_READY_ID = "stronghold-ready";
     private static final int NOTIF_ID = 0x53504D;
+    private static final int READY_NOTIF_ID = 0x53504E;
 
     /** 进度广播：UpdateService → MainActivity 对话框（同一进程内，普通广播即可）。 */
     public static final String ACTION_PROGRESS = "com.stronghold.launcher.UPDATE_PROGRESS";
@@ -146,7 +149,32 @@ public class UpdateService extends Service {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         int flags = PendingIntent.FLAG_UPDATE_CURRENT;
         if (Build.VERSION.SDK_INT >= 23) flags |= PendingIntent.FLAG_IMMUTABLE;
-        PendingIntent pi = PendingIntent.getActivity(this, 0, i, flags);
+
+        // ⚠️ Android 14+（API 34）要求 PendingIntent 创建者显式 opt-in 才允许后台启动 Activity，
+        //    否则 AlarmManager 触发时被 BAL 拦截。真机（Android 15）日志：
+        //    E ActivityTaskManager: Background activity launch blocked!
+        //      balRequireOptInByPendingIntentCreator: true
+        //    这里显式声明「允许后台启动」，让更新完成后能自动回到游戏。
+        PendingIntent pi;
+        if (Build.VERSION.SDK_INT >= 34) {
+            PendingIntent tmp = null;
+            try {
+                android.app.ActivityOptions opts = android.app.ActivityOptions.makeBasic();
+                opts.setPendingIntentBackgroundActivityStartMode(
+                        android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED);
+                tmp = PendingIntent.getActivity(this, 0, i, flags, opts.toBundle());
+            } catch (Throwable t) {
+                Log.w(TAG, "PendingIntent BAL opt-in failed", t);
+            }
+            pi = (tmp != null) ? tmp : PendingIntent.getActivity(this, 0, i, flags);
+        } else {
+            pi = PendingIntent.getActivity(this, 0, i, flags);
+        }
+
+        // 兜底：先发一条独立通知（不绑前台服务，进程死后仍在）。
+        // 即使自动拉起仍被系统拦下，用户点通知也能回到新版本，不会"更新完停在桌面一脸懵"。
+        postReadyNotification(pi);
+
         AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         if (am != null) {
             long at = System.currentTimeMillis() + 800;
@@ -172,6 +200,29 @@ public class UpdateService extends Service {
         android.os.Process.killProcess(android.os.Process.myPid());
     }
 
+    /** 更新已就绪的独立通知：不绑前台服务，进程被杀后仍保留，点击即启动 MainActivity。 */
+    private void postReadyNotification(PendingIntent launch) {
+        if (nm == null) return;
+        try {
+            Notification.Builder b = (Build.VERSION.SDK_INT >= 26)
+                    ? new Notification.Builder(this, CHANNEL_READY_ID)
+                    : new Notification.Builder(this);
+            b.setContentTitle("卫戍协议：更新")
+                    .setContentText("更新已就绪，点按进入游戏")
+                    .setSmallIcon(R.drawable.ic_launcher_foreground)
+                    .setContentIntent(launch)
+                    .setAutoCancel(true)
+                    .setOngoing(false);
+            // 全屏通知：系统/用户允许时（canUseFullScreenIntent），更新完成会像来电一样自动弹回游戏；
+            // 不允许则降级为普通通知（用户点一下也能回）。API 34+ 才有 canUseFullScreenIntent。
+            boolean canFull = Build.VERSION.SDK_INT < 34 || nm.canUseFullScreenIntent();
+            if (canFull) b.setFullScreenIntent(launch, true);
+            nm.notify(READY_NOTIF_ID, b.build());
+        } catch (Throwable t) {
+            Log.w(TAG, "postReadyNotification failed", t);
+        }
+    }
+
     private void createChannel() {
         if (Build.VERSION.SDK_INT < 26 || nm == null) return;
         NotificationChannel ch = new NotificationChannel(
@@ -179,6 +230,11 @@ public class UpdateService extends Service {
         ch.setShowBadge(false);
         ch.setSound(null, null);
         nm.createNotificationChannel(ch);
+        // 「更新已就绪」用 DEFAULT：通知栏醒目、有轻微提示，但不弹横幅打扰
+        NotificationChannel ready = new NotificationChannel(
+                CHANNEL_READY_ID, "卫戍协议：更新完成", NotificationManager.IMPORTANCE_DEFAULT);
+        ready.setShowBadge(true);
+        nm.createNotificationChannel(ready);
     }
 
     private Notification buildNotification(String text) {
