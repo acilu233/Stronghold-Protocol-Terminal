@@ -130,6 +130,9 @@ public class UpdateService extends Service {
 
     private void sendProgress(int pct, String phase, String msg) {
         Intent i = new Intent(ACTION_PROGRESS);
+        // 显式定向本 app：MainActivity 的接收器以 RECEIVER_NOT_EXPORTED 注册，
+        // 隐式广播在 Android 13+ 可能递送不到（真机验证：下载失败后菜单卡在旧进度不更新）
+        i.setPackage(getPackageName());
         i.putExtra(EXTRA_PROGRESS, pct);
         i.putExtra(EXTRA_PHASE, phase);
         i.putExtra(EXTRA_MESSAGE, msg);

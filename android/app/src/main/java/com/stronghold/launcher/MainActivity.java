@@ -119,8 +119,10 @@ public class MainActivity extends Activity {
             String phase = i.getStringExtra(UpdateService.EXTRA_PHASE);
             String msg = i.getStringExtra(UpdateService.EXTRA_MESSAGE);
             if ("error".equals(phase)) {
+                updateDownloading = false;   // 终态：允许下次检查重新开始
                 updateDialogState(STATE_ERROR, msg != null ? msg : "下载失败", 0);
             } else if ("done".equals(phase)) {
+                updateDownloading = false;   // 终态：允许下次检查重新开始
                 updateDialogState(STATE_DONE, "下载完成，正在应用并重启…", 100);
             } else {
                 String text = (msg != null && !msg.isEmpty()) ? msg : ("正在下载更新包… " + p + "%");
@@ -2428,7 +2430,11 @@ public class MainActivity extends Activity {
                         }
                         final String js = "window.__xjImportStats && window.__xjImportStats("
                                 + JSONObject.quote(content) + ");";
-                        if (web != null) web.evaluateJavascript(js, null);
+                        // ⚠ WebView.evaluateJavascript 必须在主线程调用，否则抛
+                        // "All WebView methods must be called on the same thread"（真机验证抓到）
+                        ui.post(() -> {
+                            if (web != null) web.evaluateJavascript(js, null);
+                        });
                     } catch (Throwable t) {
                         Log.w(TAG, "import read failed", t);
                         showToast("读取文件失败：" + t.getMessage());
