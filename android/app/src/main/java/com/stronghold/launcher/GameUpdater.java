@@ -107,7 +107,7 @@ public final class GameUpdater {
         writeVersion(ctx, latest.tag);
     }
 
-    /** 应用已下载的更新（增量）包。阻塞，起 Node 前调用。 */
+    /** 应用已下载的更新包（增量包或完整包，由 UpdateService 选好）。阻塞，起 Node 前调用。 */
     static void applyUpdate(Context ctx, UpdateRepo.Progress cb) throws IOException {
         File zip = pendingZip(ctx);
         if (zip == null) return;
@@ -116,6 +116,71 @@ public final class GameUpdater {
         zip.delete();
         if (tag != null) writeVersion(ctx, tag);
         clearPending(ctx);
+    }
+
+    // ── 增量包适用性判定 ────────────────────────────────────────────────────
+
+    /**
+     * 增量包是否适用于「当前已装版本」。
+     *
+     * 上游的 -update.zip 里带 UPDATE.json（format 1），其中
+     * <pre>"from": ["0.3.2"]</pre>
+     * 列出它能从哪些版本升上来。**跨版本应用会得到「半新半旧」的安装**
+     * （2026-11-02 真机事故：0.2.6 直接吃 0.3.3 的增量包，只覆盖了 21 个文件，
+     *  server/ 等仍是旧代码 → Node 起不来，启动器卡在启动页）。
+     *
+     * 所以：from 含当前版本才允许走增量；读不到 / 解析失败 / 不含 → 一律走完整包。
+     */
+    static boolean updateAppliesTo(File zip, String installedTag) {
+        String cur = normVer(installedTag);
+        if (cur == null) return false;
+        String json = readZipText(zip, "UPDATE.json");
+        if (json == null) return false;
+        int k = json.indexOf("\"from\"");
+        if (k < 0) return false;
+        int lb = json.indexOf('[', k);
+        int rb = lb < 0 ? -1 : json.indexOf(']', lb);
+        if (lb < 0 || rb < 0) return false;
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"([^\"]{1,32})\"").matcher(json.substring(lb + 1, rb));
+        while (m.find()) {
+            if (cur.equals(normVer(m.group(1)))) return true;
+        }
+        return false;
+    }
+
+    /** 是否为「完整安装」：有官方本地素材（public/assets/local）。精简安装不能吃增量包。 */
+    static boolean isFullInstall(Context ctx) {
+        File local = new File(nodejsProject(ctx), "public/assets/local");
+        String[] list = local.list();
+        return local.isDirectory() && list != null && list.length > 0;
+    }
+
+    /** 版本号规范化：去掉前导 v / V、去空白。 */
+    private static String normVer(String v) {
+        if (v == null) return null;
+        String s = v.trim();
+        if (!s.isEmpty() && (s.charAt(0) == 'v' || s.charAt(0) == 'V')) s = s.substring(1);
+        return s.isEmpty() ? null : s;
+    }
+
+    /** 从 zip 中读一个文本条目（允许前面带一层目录，如 Stronghold-Protocol/）。 */
+    private static String readZipText(File zip, String name) {
+        try (ZipFile zf = new ZipFile(zip)) {
+            Enumeration<? extends ZipEntry> e = zf.entries();
+            while (e.hasMoreElements()) {
+                ZipEntry ze = e.nextElement();
+                if (ze.isDirectory()) continue;
+                String n = ze.getName();
+                if (!n.equals(name) && !n.endsWith("/" + name)) continue;
+                try (InputStream in = zf.getInputStream(ze)) {
+                    java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+                    copy(in, bos);
+                    return new String(bos.toByteArray(), StandardCharsets.UTF_8);
+                }
+            }
+        } catch (Throwable ignored) { }
+        return null;
     }
 
     /** 解压 zip 到 target：剥掉公共顶层目录（Stronghold-Protocol/）、覆盖同名、保留既有文件。 */

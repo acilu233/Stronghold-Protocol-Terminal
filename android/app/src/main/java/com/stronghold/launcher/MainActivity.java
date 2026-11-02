@@ -1963,7 +1963,8 @@ public class MainActivity extends Activity {
             String notes = (r.notes != null && !r.notes.isEmpty()) ? ("\n\n更新内容：\n" + r.notes) : "";
             updateDialogState(STATE_AVAILABLE,
                     "当前版本：\n" + cur + "\n\n上游最新：\n" + tagLine + notes
-                            + "\n\n点「立即更新」本机自动拉取增量包并应用。", 0);
+                            + "\n\n点「立即更新」自动下载并应用。跨版本（增量包不适用）时会自动改用"
+                            + "完整包，下载量较大。", 0);
         } else {
             updateDialogState(STATE_UPTODATE,
                     "当前版本：\n" + cur + "\n\n上游最新：\n" + tagLine + "\n\n已是最新。", 0);
@@ -2045,13 +2046,14 @@ public class MainActivity extends Activity {
         if (updateTag != null && !updateTag.isEmpty()) startLauncherUpdate(updateTag, updateName, false);
     }
 
-    /** 启动器托管更新：下载上游「更新包」（增量，约几 MB）到 cache 并记 pending，重启后由 NodeService 应用。
+    /** 启动器托管更新：下载上游更新包到 cache 并记 pending，重启后由 NodeService 应用。
+     *  下什么包由 UpdateService 判定：先探增量包（读 UPDATE.json 的 from），不适用于当前版本就改下完整包。
      *  silent=true 时不弹窗、不强制重启，下载完下次启动自动生效（启动静默检查走这条）。 */
     private void startLauncherUpdate(String tag, String name, boolean silent) {
         if (tag == null || tag.isEmpty()) { showToast("缺少版本标识，无法自动更新"); return; }
         if (UpdateService.isDownloading()) {
             showToast("更新正在下载中…");
-            if (!silent) { updateDownloading = true; updateDialogState(STATE_DOWNLOADING, "正在下载更新包…", 0); }
+            if (!silent) { updateDownloading = true; updateDialogState(STATE_DOWNLOADING, "正在准备更新…", 0); }
             return;
         }
         Intent i = new Intent(this, UpdateService.class);
@@ -2060,7 +2062,7 @@ public class MainActivity extends Activity {
         i.putExtra(UpdateService.EXTRA_SILENT, silent);
         try {
             if (silent) showToast("发现新版本，正在后台下载…");
-            else { updateDownloading = true; updateDialogState(STATE_DOWNLOADING, "正在下载更新包… 0%", 0); }
+            else { updateDownloading = true; updateDialogState(STATE_DOWNLOADING, "正在准备更新…", 0); }
             if (Build.VERSION.SDK_INT >= 26) startForegroundService(i);
             else startService(i);
         } catch (Throwable t) {

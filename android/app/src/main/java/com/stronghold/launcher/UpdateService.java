@@ -57,18 +57,55 @@ public class UpdateService extends Service {
     private void runDownload(String tag, boolean silent) {
         downloading = true;
         File zip = new File(getCacheDir(), "sp-update.zip");
+        String cur = GameUpdater.installedVersion(this);
+        boolean fullInstall = GameUpdater.isFullInstall(this);
         try {
-            sendProgress(0, "downloading", "正在下载更新包… 0%");
-            notify("正在下载更新包…");
-            UpdateRepo.downloadFast(UpdateRepo.updateUrl(tag), zip, (got, total, frac) -> {
-                int pct = total > 0 ? (int) (frac * 100) : -1;
-                String msg = total > 0
-                        ? "正在下载更新包… " + pct + "%"
-                        : "正在下载更新包… " + (got / 1048576) + " MB";
-                sendProgress(pct, "downloading", msg);
-                notify(msg);
-            });
-            GameUpdater.setPending(this, zip, tag, "update");
+            boolean ready = false;   // 增量包是否已确认可用（可用则不必再下完整包）
+
+            // ── ① 先下「增量包」（通常几百 KB ~ 20MB），用其中的 UPDATE.json 判断能否用在当前版本上。
+            //     上游的 -update.zip 带 "from": ["0.3.2"] 白名单；跨版本硬覆盖会得到「半新半旧」的安装
+            //     → Node 起不来、启动器卡在启动页（2026-11-02 真机事故）。所以必须先判定。
+            if (cur != null && fullInstall) {
+                try {
+                    sendProgress(-1, "downloading", "正在确认更新方式…");
+                    notify("正在确认更新方式…");
+                    UpdateRepo.downloadFast(UpdateRepo.updateUrl(tag), zip, (got, total, frac) -> {
+                        int pct = total > 0 ? (int) (frac * 100) : -1;
+                        sendProgress(pct, "downloading", total > 0
+                                ? "正在获取增量包… " + pct + "%" : "正在获取增量包…");
+                    });
+                    ready = GameUpdater.updateAppliesTo(zip, cur);
+                    Log.i(TAG, "installed=" + cur + " incrementalApplies=" + ready);
+                    if (!ready) {
+                        zip.delete();
+                        sendProgress(-1, "downloading", "增量包不适用于当前版本，改为下载完整包…");
+                        notify("增量包不适用，改下完整包…");
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "增量包获取失败，改走完整包：" + t.getMessage());
+                    zip.delete();
+                    ready = false;
+                }
+            } else {
+                Log.i(TAG, "installed=" + cur + " fullInstall=" + fullInstall + " → 直接下载完整包");
+            }
+
+            // ── ② 增量包不可用 → 下完整包（含全部代码与素材，跨版本唯一安全路径）
+            if (!ready) {
+                sendProgress(0, "downloading", "正在下载完整包… 0%");
+                notify("正在下载完整包…");
+                UpdateRepo.downloadFast(UpdateRepo.fullUrl(tag), zip, (got, total, frac) -> {
+                    int pct = total > 0 ? (int) (frac * 100) : -1;
+                    String msg = total > 0
+                            ? "正在下载完整包… " + pct + "%（" + (got / 1048576)
+                              + "/" + (total / 1048576) + " MB）"
+                            : "正在下载完整包… " + (got / 1048576) + " MB";
+                    sendProgress(pct, "downloading", msg);
+                    notify(msg);
+                });
+            }
+
+            GameUpdater.setPending(this, zip, tag, ready ? "update" : "full");
             sendProgress(100, "done", "下载完成");
             if (silent) {
                 // 静默模式：不强制重启，pending 在下次启动由 NodeService 应用
