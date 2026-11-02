@@ -34,14 +34,15 @@ public final class UpdateRepo {
     public static final String REPO = "sganggs/Stronghold-Protocol";
     private static final String ATOM = "https://github.com/" + REPO + "/releases.atom";
 
-    /** 第三方 GitHub 加速镜像前缀（与游戏自带下载器同源）；直连在最后兜底。 */
+    /** 第三方 GitHub 加速镜像前缀（与游戏自带下载器同源）；直连在最后兜底。
+     *  ⚠️ gh.llkk.cc 已确认死亡（两次 HEAD 探测均 000，真实代理请求也失败），已剔除。
+     *  ghproxy.net HEAD 探测虽返回 000，但真实代理请求返回 206（存活），保留。 */
     private static final String[] MIRROR_PREFIXES = {
             "https://gh-proxy.com/",
             "https://ghfast.top/",
             "https://ghproxy.net/",
             "https://gh.monlor.com/",
             "https://slink.ltd/",
-            "https://gh.llkk.cc/",
     };
 
     /** 下载进度回调：got/total 字节；frac<0 表示总量未知。 */

@@ -1572,6 +1572,122 @@
     td.setAttribute('data-xj-side', side);
   }
 
+  // ======================================================================================
+  // 8. 对局记录导出 / 导入（接管上游失效的 导出/导入 按钮）
+  //
+  //  上游 stats.js 用 `URL.createObjectURL(new Blob)` + `<a download>` 导出、用
+  //  `<input type=file>` 导入 —— 这两种网页文件 API 在安卓 WebView 上**不落地也不弹选择器**，
+  //  表现就是「点了没反应」。
+  //
+  //  这里的做法（不碰 game/ 一个字节）：
+  //    · 隐藏上游那两个按钮（data-testid="stats-export" / "stats-import"）；
+  //    · 在同样的位置注入我们自己的「导出 / 导入」按钮，走原生桥：
+  //        Launcher.exportMatchStats(json) → Java 写进手机 Download 目录；
+  //        Launcher.importMatchStats()     → Java 调起系统文件选择器；
+  //    · 原生读回文件内容后回调 window.__xjImportStats，按 id 并集（本地优先）+ 写回 localStorage。
+  //  ．导出信封与上游 exportStats 完全一致（app/kind/v/exportedAt/records），可被原版识别；
+  //    反过来也认原版导出的文件（裸 {records} 或带信封都行），与上游 importStats 行为对齐。
+  //  ．用 MutationObserver 反复兜底：React 重渲染可能冲掉我们注入的节点，observer 会重新接上。
+  // ======================================================================================
+  function xjExportStats() {
+    try {
+      var raw = window.localStorage.getItem(STATS_KEY);
+      var records = [];
+      if (raw) {
+        try {
+          var env = JSON.parse(raw);
+          if (env && Array.isArray(env.records)) records = env.records;
+        } catch (e) { /* ignore */ }
+      }
+      if (!records.length) { call('toast', '没有可导出的对局记录'); return; }
+      var payload = {
+        app: 'stronghold-protocol',
+        kind: 'local-stats',
+        v: 3,
+        exportedAt: new Date().toISOString(),
+        records: records
+      };
+      call('exportMatchStats', JSON.stringify(payload));
+    } catch (e) {
+      call('toast', '导出失败');
+    }
+  }
+
+  function xjImportStats() {
+    call('importMatchStats');
+  }
+
+  /** 原生读回导入文件内容后回调：解析 + 按 id 并集（本地优先）+ 写回 localStorage。 */
+  window.__xjImportStats = function (rawText) {
+    try {
+      var raw = JSON.parse(rawText);
+      if (!raw || typeof raw !== 'object' || !Array.isArray(raw.records)) {
+        call('toast', '导入失败：不是有效的统计导出文件');
+        return;
+      }
+      if (typeof raw.v === 'number' && raw.v > 3) {
+        call('toast', '导入失败：这份文件由更新版本的客户端导出，请先升级客户端');
+        return;
+      }
+      var curRaw = window.localStorage.getItem(STATS_KEY);
+      var cur = { v: 3, records: [] };
+      if (curRaw) {
+        try { var ce = JSON.parse(curRaw); if (ce && Array.isArray(ce.records)) cur = ce; } catch (e) { /* ignore */ }
+      }
+      var have = {};
+      (cur.records || []).forEach(function (r) { if (r && r.id) have[r.id] = true; });
+      var byId = {};
+      // 先 incoming 后 current：同 id 时 current 覆盖 → 本地优先（与上游 mergeStats 一致）
+      (raw.records || []).forEach(function (r) {
+        if (r && r.id && r.test !== true) byId[r.id] = r;
+      });
+      (cur.records || []).forEach(function (r) {
+        if (r && r.id && r.test !== true) byId[r.id] = r;
+      });
+      var merged = Object.keys(byId).map(function (k) { return byId[k]; });
+      merged.sort(function (a, b) { return (b.t || 0) - (a.t || 0); });   // 时间倒序
+      if (merged.length > 1000) merged = merged.slice(0, 1000);            // 与 MAX_RECORDS 对齐
+      var added = (raw.records || []).filter(function (r) {
+        return r && r.id && r.test !== true && !have[r.id];
+      }).length;
+      window.localStorage.setItem(STATS_KEY, JSON.stringify({ v: 3, records: merged }));
+      call('toast', added
+        ? ('已导入 ' + added + ' 条记录，重开统计页面查看')
+        : '没有新记录（全部与现有数据重复）');
+    } catch (e) {
+      call('toast', '导入失败：' + (e && e.message ? e.message : e));
+    }
+  };
+
+  /** 隐藏上游失效按钮 + 注入我们自己的导出/导入按钮（对抗 React 重渲染，靠 observer 反复兜底）。 */
+  function wireStatsIo() {
+    try {
+      var expBtn = document.querySelector('[data-testid="stats-export"]');
+      if (!expBtn) return;                       // 统计页面没开 → 跳过
+      var impBtn = document.querySelector('[data-testid="stats-import"]');
+      if (expBtn) { expBtn.style.display = 'none'; expBtn.setAttribute('data-xj-hidden', '1'); }
+      if (impBtn) { impBtn.style.display = 'none'; impBtn.setAttribute('data-xj-hidden', '1'); }
+      if (document.querySelector('.xj-st-io')) return;   // 已注入过 → 不重复
+
+      var mk = function (label, fn) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'xj-st-io btn btn--ghost btn--sm';
+        b.textContent = label;
+        b.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          fn();
+        });
+        return b;
+      };
+      var host = expBtn.parentNode;
+      if (!host) return;
+      host.insertBefore(mk('导入', xjImportStats), expBtn);
+      host.insertBefore(mk('导出', xjExportStats), expBtn);
+    } catch (e) { /* ignore */ }
+  }
+
   function start() {
     try {
       document.documentElement.classList.add('xj-touch');
@@ -1589,11 +1705,13 @@
       } catch (e) { /* ignore */ }
       // 只观察元素增删（childList），不观察属性/文本 —— 我们的样式都挂在 class 上，
       // 而属性变化会被自己的写入再次触发，是死循环的第二个来源。
-      var mo = new MutationObserver(function () { queueTick(); });
+      var mo = new MutationObserver(function () { queueTick(); wireStatsIo(); });
       mo.observe(document.body, { childList: true, subtree: true });
       // 首屏渲染完成后再补一次（MutationObserver 有时赶不上 preact 的首帧）
       setTimeout(tick, 300);
       setTimeout(tick, 1200);
+      setTimeout(wireStatsIo, 300);
+      setTimeout(wireStatsIo, 1200);
     } catch (e) {
       if (window.console && console.warn) console.warn('[xj] inject failed', e);
     }

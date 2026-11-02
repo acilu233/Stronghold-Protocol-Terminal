@@ -26,6 +26,9 @@ import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.view.animation.LinearInterpolator;
 import android.os.Build;
+import android.content.ContentValues;
+import android.provider.MediaStore;
+import android.os.Environment;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -66,7 +69,11 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -95,6 +102,8 @@ public class MainActivity extends Activity {
     // ── 检查更新：统一更新管线（手动弹窗进度 + 启动静默检查，共用 UpdateService/GameUpdater）──
     private static final int STATE_CHECKING = 0, STATE_UPTODATE = 1, STATE_AVAILABLE = 2,
             STATE_DOWNLOADING = 3, STATE_DONE = 4, STATE_ERROR = 5;
+    // 对局记录导入：调系统文件选择器后用这个 requestCode 在 onActivityResult 回收
+    private static final int REQ_IMPORT_STATS = 9001;
     private AlertDialog updateDialog;
     private TextView updateMsgTv;
     private ProgressBar updateProgressPb;
@@ -104,7 +113,8 @@ public class MainActivity extends Activity {
         @Override
         public void onReceive(Context ctx, Intent i) {
             if (i == null || !UpdateService.ACTION_PROGRESS.equals(i.getAction())) return;
-            if (updateDialog == null || !updateDialog.isShowing() || !updateDownloading) return;
+            // 不要求对话框还开着：对话框关掉后，菜单项仍要显示进度（与通知栏一致）
+            if (!updateDownloading) return;
             int p = i.getIntExtra(UpdateService.EXTRA_PROGRESS, 0);
             String phase = i.getStringExtra(UpdateService.EXTRA_PHASE);
             String msg = i.getStringExtra(UpdateService.EXTRA_MESSAGE);
@@ -134,6 +144,7 @@ public class MainActivity extends Activity {
     private LinearLayout menuWanRow;       // 外部连接穿透网址输入框（默认隐藏）
     private EditText menuWanInput;         // 穿透网址输入框
     private TextView menuWanJoin;          // 「加入」按钮
+    private TextView menuUpdateItem;         // 「检查更新」项（下载/检查时改写文本显示进度）
     private final LauncherBridge bridge = new LauncherBridge();
 
     // —— 二次返回退出（防手滑）——
@@ -566,7 +577,7 @@ public class MainActivity extends Activity {
         // 6 个菜单项（单行紧凑式：横屏可视高度仅约 392dp，两行式会超出屏幕被裁掉；
         // addMenuItem 会在项之间自动加分隔线；keepOpen=true 的项点完不收起菜单）
         menuReturn   = addMenuItem(menuPanel, "返回本地", this::goHomeAndDisconnect);
-        addMenuItem(menuPanel, "检查更新", this::doCheckUpdate);
+        menuUpdateItem = addMenuItem(menuPanel, "检查更新", this::doCheckUpdate);
         addMenuItem(menuPanel, "复制联机地址", this::copyLanAddress);
         addMenuItem(menuPanel, "刷新页面", () -> { if (web != null) web.reload(); });
         menuNetLabel = addMenuItem(menuPanel, "联机方式：局域网", this::toggleNetMode, true); // 切换不收起
@@ -2006,10 +2017,36 @@ public class MainActivity extends Activity {
         updateDialog = d;
         updateMsgTv = tv;
         updateProgressPb = pb;
+        // 菜单项同步进入「检查中」；对话框关闭（且未在下载）时复位回「检查更新」
+        if (menuUpdateItem != null) menuUpdateItem.setText("检查更新 · 检查中");
+        d.setOnDismissListener(dlg -> {
+            if (!updateDownloading && menuUpdateItem != null) menuUpdateItem.setText("检查更新");
+        });
     }
 
     /** 切换对话框到某个状态（文本/进度条/按钮）。 */
     private void updateDialogState(int state, String msg, int progress) {
+        if (updateDialog == null && menuUpdateItem == null) return;
+        // 顶部菜单「检查更新」项：随状态显示进度 / 结果（即使对话框已关闭也能从菜单看到）
+        if (menuUpdateItem != null) {
+            switch (state) {
+                case STATE_CHECKING:
+                    menuUpdateItem.setText("检查更新 · 检查中");
+                    break;
+                case STATE_DOWNLOADING:
+                    menuUpdateItem.setText(progress >= 0 ? ("检查更新 · " + progress + "%") : "检查更新 · 下载中");
+                    break;
+                case STATE_AVAILABLE:
+                    menuUpdateItem.setText("检查更新 · 有新版本");
+                    break;
+                case STATE_ERROR:
+                    menuUpdateItem.setText("检查更新 · 失败");
+                    break;
+                default: // STATE_UPTODATE / STATE_DONE
+                    menuUpdateItem.setText("检查更新");
+                    break;
+            }
+        }
         if (updateDialog == null) return;
         if (updateMsgTv != null) updateMsgTv.setText(msg != null ? msg : "");
         if (updateProgressPb != null) {
@@ -2297,6 +2334,109 @@ public class MainActivity extends Activity {
         public void setMigrated() {
             try { UserStore.setMigrated(MainActivity.this); }
             catch (Throwable t) { Log.w(TAG, "setMigrated failed", t); }
+        }
+
+        /**
+         * 对局记录导出：把 JS 传来的 JSON（上游兼容信封）写入手机 Download 文件夹。
+         * minSdk=30 → 走 MediaStore.Downloads，无需存储权限；文件名 stronghold-stats-YYYYMMDD-HHMMSS.json。
+         */
+        @android.webkit.JavascriptInterface
+        public void exportMatchStats(final String json) {
+            if (json == null || json.isEmpty()) {
+                showToast("没有可导出的对局记录");
+                return;
+            }
+            try {
+                String name = "stronghold-stats-" + statsFileTs() + ".json";
+                ContentValues v = new ContentValues();
+                v.put(MediaStore.Downloads.DISPLAY_NAME, name);
+                v.put(MediaStore.Downloads.MIME_TYPE, "application/json");
+                v.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS);
+                Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                if (uri == null) {
+                    showToast("导出失败：无法写入 Download 目录");
+                    return;
+                }
+                OutputStream os = getContentResolver().openOutputStream(uri);
+                if (os == null) {
+                    showToast("导出失败：无法打开文件");
+                    return;
+                }
+                try {
+                    os.write(json.getBytes(StandardCharsets.UTF_8));
+                } finally {
+                    os.close();
+                }
+                showToast("已导出到 Download/" + name);
+            } catch (Throwable t) {
+                Log.w(TAG, "exportMatchStats failed", t);
+                showToast("导出失败：" + t.getMessage());
+            }
+        }
+
+        /**
+         * 对局记录导入：调起系统文件选择器（application/json / text/plain），
+         * 选中文件由 MainActivity.onActivityResult 读回并交给网页侧 window.__xjImportStats 合并。
+         */
+        @android.webkit.JavascriptInterface
+        public void importMatchStats() {
+            ui.post(() -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("application/json");
+                    intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/json", "text/plain"});
+                    startActivityForResult(intent, REQ_IMPORT_STATS);
+                } catch (Throwable t) {
+                    Log.w(TAG, "importMatchStats failed", t);
+                    showToast("无法打开文件选择器");
+                }
+            });
+        }
+    }
+
+    /** 对局记录导出文件名时间戳：stronghold-stats-YYYYMMDD-HHMMSS（与上游 exportFilename 同格式）。 */
+    private static String statsFileTs() {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US);
+        return sdf.format(new Date());
+    }
+
+    /** 读 content URI 的纯文本（导入文件用）。 */
+    private String readUriText(Uri uri) throws Exception {
+        StringBuilder sb = new StringBuilder();
+        try (InputStream in = getContentResolver().openInputStream(uri)) {
+            if (in == null) throw new Exception("无法打开文件");
+            BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line).append('\n');
+        }
+        return sb.toString();
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_IMPORT_STATS) {
+            if (resultCode == RESULT_OK && data != null && data.getData() != null) {
+                final Uri uri = data.getData();
+                new Thread(() -> {
+                    try {
+                        final String content = readUriText(uri);
+                        if (content.length() > 8000000) {
+                            showToast("文件过大，无法导入");
+                            return;
+                        }
+                        final String js = "window.__xjImportStats && window.__xjImportStats("
+                                + JSONObject.quote(content) + ");";
+                        if (web != null) web.evaluateJavascript(js, null);
+                    } catch (Throwable t) {
+                        Log.w(TAG, "import read failed", t);
+                        showToast("读取文件失败：" + t.getMessage());
+                    }
+                }).start();
+            } else {
+                showToast("已取消导入");
+            }
         }
     }
 }
