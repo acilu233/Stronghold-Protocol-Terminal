@@ -56,6 +56,12 @@ public class NodeService extends Service {
      */
     public static volatile boolean installing = false;
 
+    /**
+     * 首装 / 更新失败标志（具体原因由 installProgress 显示在启动页）。
+     * MainActivity.waitReady 看到它就不再覆盖文案、也不干等到 30 分钟超时。
+     */
+    public static volatile boolean failed = false;
+
     @Override
     public void onCreate() {
         super.onCreate();
@@ -93,13 +99,22 @@ public class NodeService extends Service {
             installProgress.onProgress(msg, Math.max(0f, Math.min(0.9f, frac * 0.9f)));
         };
         installing = true;
+        failed = false;
         try {
             if (!GameUpdater.hasGame(this)) {
                 if (installProgress != null) installProgress.onProgress("首次启动：正在获取游戏…", 0.01f);
                 GameUpdater.installFirst(this, pcb);
             } else if (GameUpdater.hasPending(this)) {
                 if (installProgress != null) installProgress.onProgress("正在应用更新…", 0.9f);
-                GameUpdater.applyUpdate(this, pcb);
+                // 解压进度映射到 90%~100%：v0.4.0 增量包有 7604 个文件 / 431 MiB，要几分钟，必须有反馈
+                GameUpdater.applyUpdate(this, (got, total, frac) -> {
+                    if (installProgress == null) return;
+                    String msg = total > 0
+                            ? "正在应用更新 " + (got / 1048576) + "/" + (total / 1048576)
+                              + " MB（" + (int) (frac * 100) + "%）"
+                            : "正在应用更新… " + (got / 1048576) + " MB";
+                    installProgress.onProgress(msg, 0.9f + Math.min(1f, frac) * 0.1f);
+                });
             }
             // 确保安卓入口 android-main.mjs 在位（从 APK assets 铺，不覆盖游戏文件）
             ProjectInstaller.ensureEntry(this, root, (msg, frac) -> {
@@ -108,8 +123,18 @@ public class NodeService extends Service {
         } catch (Throwable t) {
             writeLog("install/update failed:\n" + t);
             Log.e(TAG, "install/update failed", t);
+            // 首装 / 更新失败：把原因显示在启动页，并且不再启动 Node（避免拿半新半旧的代码去跑）。
+            // pending 会保留，用户清理空间后重启应用即可重试。
+            failed = true;
+            if (installProgress != null) {
+                String m = t.getMessage();
+                if (m == null || m.trim().isEmpty()) m = t.getClass().getSimpleName();
+                installProgress.onProgress("更新失败：" + m, 1f);
+            }
+            return;
         } finally {
-            installing = false;   // 交还给 boot()，之后才显示「正在启动游戏服务…」
+            // 失败时保持 installing=true，避免 waitReady 把文案覆盖成「正在启动游戏服务…」
+            if (!failed) installing = false;
         }
 
         // ② 起 Node（安卓专用编排入口：缺素材先下载、再起游戏服务，见 bootstrap/android-main.mjs）

@@ -34,6 +34,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -940,8 +941,11 @@ public class MainActivity extends Activity {
 
             // 1) 等服务真正可用（服务线程在展开文件 + 起 Node；下载阶段先经 3001 暴露进度）
             if (!waitReady(DOWNLOAD_TIMEOUT_MS)) {
-                ui.post(() -> setStatus("本地服务启动超时",
-                        "请查看 node-service.log，或点按屏幕重试"));
+                // 更新失败时错误已经显示在启动页，这里不要覆盖成「超时」
+                if (!NodeService.failed) {
+                    ui.post(() -> setStatus("本地服务启动超时",
+                            "请查看 node-service.log，或点按屏幕重试"));
+                }
                 return;
             }
 
@@ -1029,6 +1033,11 @@ public class MainActivity extends Activity {
             if (healthOk()) {
                 Log.i(TAG, "server is healthy");
                 return true;
+            }
+            // 首装/更新失败：错误已由 installProgress 写到启动页，别再干等 30 分钟
+            if (NodeService.failed) {
+                Log.w(TAG, "install/update failed, stop waiting");
+                return false;
             }
             ProgressState p = pollProgress();
             if (p != null) {
@@ -2010,6 +2019,16 @@ public class MainActivity extends Activity {
         b.setNegativeButton("稍后", (d, w) -> d.dismiss());
         AlertDialog d = b.show();
         themeDialog(d);
+        // 用户要求：更新/检查弹窗「点外面不关」，只能按关闭按钮或返回键退出；
+        // 返回键在更新进行中会再弹一次确认，防止手滑把进度窗口关掉。
+        d.setCanceledOnTouchOutside(false);
+        d.setOnKeyListener((dlg, keyCode, ev) -> {
+            if (keyCode == KeyEvent.KEYCODE_BACK) {
+                if (ev.getAction() == KeyEvent.ACTION_UP) onUpdateDialogBack();
+                return true;   // DOWN/UP 都吃掉，避免系统默认 dismiss
+            }
+            return false;
+        });
         // ⚠️ AlertDialog 默认「点按钮即 dismiss」——这里覆盖掉，否则点「立即更新」弹窗会直接
         //    关闭，无法「原地」显示下载进度条。正/负按钮都不自动关闭，由各自逻辑控制。
         d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v -> onUpdatePositive());
@@ -2024,6 +2043,30 @@ public class MainActivity extends Activity {
         d.setOnDismissListener(dlg -> {
             if (!updateDownloading && menuUpdateItem != null) menuUpdateItem.setText("检查更新");
         });
+    }
+
+    /** 更新对话框按下返回键：更新进行中弹二次确认，否则正常关闭（点外面永远不关）。 */
+    private void onUpdateDialogBack() {
+        boolean busy = updateDownloading || NodeService.installing;
+        if (busy) {
+            confirmExitWhileUpdating();
+        } else if (updateDialog != null && updateDialog.isShowing()) {
+            updateDialog.dismiss();
+        }
+    }
+
+    /** 更新进行中的二次确认（防手滑把进度窗口关掉）。返回键/点外面 = 取消，等于「继续更新」。 */
+    private void confirmExitWhileUpdating() {
+        AlertDialog.Builder b = new AlertDialog.Builder(this);
+        b.setTitle("正在更新");
+        b.setMessage("更新正在进行，退出会中断下载/应用。\n确定要关闭更新窗口吗？");
+        b.setPositiveButton("继续更新", null);
+        b.setNegativeButton("退出更新", (dd, w) -> {
+            if (updateDialog != null && updateDialog.isShowing()) updateDialog.dismiss();
+        });
+        AlertDialog d = b.show();
+        themeDialog(d);
+        d.setCanceledOnTouchOutside(false);
     }
 
     /** 切换对话框到某个状态（文本/进度条/按钮）。 */

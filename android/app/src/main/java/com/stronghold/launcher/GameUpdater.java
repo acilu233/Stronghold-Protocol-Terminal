@@ -2,6 +2,7 @@ package com.stronghold.launcher;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.StatFs;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -107,16 +108,52 @@ public final class GameUpdater {
         writeVersion(ctx, latest.tag);
     }
 
+    /** 解压前为文件系统保留的余量（避免刚好把分区塞满导致系统异常）。 */
+    private static final long SPACE_MARGIN = 32L * 1024 * 1024;
+
     /** 应用已下载的更新包（增量包或完整包，由 UpdateService 选好）。阻塞，起 Node 前调用。 */
     static void applyUpdate(Context ctx, UpdateRepo.Progress cb) throws IOException {
         File zip = pendingZip(ctx);
         if (zip == null) return;
         String tag = pendingTag(ctx);
-        extractAll(zip, nodejsProject(ctx));
+        File target = nodejsProject(ctx);
+
+        // 解压前预检空间。增量包是「覆盖同名 + 保留旧文件」，这里保守按全量解压大小算：
+        // 空间不够就立刻失败并给出人话提示；否则会写一半抛 ENOSPC，界面停在「正在应用更新…」。
+        long need = zipUncompressedBytes(zip);
+        if (need > 0 && target.isDirectory()) {
+            long avail = -1;
+            try { avail = new StatFs(target.getAbsolutePath()).getAvailableBytes(); }
+            catch (Throwable ignored) { }
+            if (avail >= 0 && avail < need + SPACE_MARGIN) {
+                throw new IOException("存储空间不足：解压约需 " + mbText(need)
+                        + " MB，当前仅剩 " + mbText(avail) + " MB。请清理空间后重试。");
+            }
+        }
+
+        extractAll(zip, target, cb);
         zip.delete();
         if (tag != null) writeVersion(ctx, tag);
         clearPending(ctx);
     }
+
+    /** zip 内所有非目录条目的「解压后」总字节（只读中央目录，不解压）。 */
+    private static long zipUncompressedBytes(File zip) {
+        long total = 0;
+        try (ZipFile zf = new ZipFile(zip)) {
+            Enumeration<? extends ZipEntry> e = zf.entries();
+            while (e.hasMoreElements()) {
+                ZipEntry ze = e.nextElement();
+                if (ze.isDirectory()) continue;
+                long s = ze.getSize();
+                if (s > 0) total += s;
+            }
+        } catch (Throwable ignored) { }
+        return total;
+    }
+
+    /** 字节 → MB（仅用于提示文案）。 */
+    private static long mbText(long bytes) { return Math.max(0, bytes) / 1048576; }
 
     // ── 增量包适用性判定 ────────────────────────────────────────────────────
 
@@ -185,13 +222,32 @@ public final class GameUpdater {
 
     /** 解压 zip 到 target：剥掉公共顶层目录（Stronghold-Protocol/）、覆盖同名、保留既有文件。 */
     static void extractAll(File zip, File target) throws IOException {
+        extractAll(zip, target, null);
+    }
+
+    /**
+     * 同上，但按「已解压字节 / 解压后总字节」回报进度。
+     * v0.4.0 增量包有 7604 个文件 / 431 MiB，解压要好几分钟；
+     * 没有回调时界面只能停在固定文案上，看起来和卡死一模一样。
+     */
+    static void extractAll(File zip, File target, UpdateRepo.Progress cb) throws IOException {
         if (!target.isDirectory() && !target.mkdirs()) throw new IOException("cannot create " + target);
         List<String> names = new ArrayList<>();
+        long totalBytes = 0;
         try (ZipFile zf = new ZipFile(zip)) {
             Enumeration<? extends ZipEntry> e = zf.entries();
-            while (e.hasMoreElements()) names.add(e.nextElement().getName());
+            while (e.hasMoreElements()) {
+                ZipEntry ze = e.nextElement();
+                names.add(ze.getName());
+                if (!ze.isDirectory()) {
+                    long s = ze.getSize();
+                    if (s > 0) totalBytes += s;
+                }
+            }
         }
         String prefix = commonTopPrefix(names);
+        long done = 0;
+        int lastPct = -1;
         try (ZipFile zf = new ZipFile(zip)) {
             Enumeration<? extends ZipEntry> e = zf.entries();
             while (e.hasMoreElements()) {
@@ -205,6 +261,15 @@ public final class GameUpdater {
                 if (parent != null) parent.mkdirs();
                 try (InputStream in = zf.getInputStream(ze); OutputStream os = new FileOutputStream(out)) {
                     copy(in, os);
+                }
+                long s = ze.getSize();
+                if (s > 0) done += s;
+                if (cb != null && totalBytes > 0) {
+                    int pct = (int) (done * 100 / totalBytes);
+                    if (pct != lastPct) {   // 每 1% 才回一次，避免刷爆主线程
+                        lastPct = pct;
+                        cb.onProgress(done, totalBytes, Math.min(1f, done / (float) totalBytes));
+                    }
                 }
             }
         }
