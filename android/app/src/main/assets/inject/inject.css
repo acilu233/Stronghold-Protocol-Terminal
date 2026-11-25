@@ -561,6 +561,11 @@ html.xj-touch .xj-st-io {
   .shopbar--reg .scard { width: 1.55rem !important; height: 2.25rem !important; }
   /* 升级卡跟着卡片高度走：1.9rem × --up-k = 2.25rem → --up-k = 1.184（上游窄屏是 0.763） */
   .shopbar--reg .lvcard.lvcard--up { --up-k: 1.184 !important; }
+  /* 人像按 1:2 撑高会超出卡片 1.75px，限到卡片同高（配合上游底部渐隐自然收边） */
+  .shopbar--reg .scard__art { height: 100% !important; max-height: 100% !important; }
+  /* 货币框（含「收起」按钮）只有 64px 高，比卡片矮 26px、底部悬空；
+     拉到与卡片同高，收起按钮随 flex 布局自然贴底 */
+  .shopbar--reg .funds { height: 2.25rem !important; align-self: stretch !important; }
   /* 上游窄屏把整行居中；改成贴右，卡片组跟着贴右边缘 */
   .shopbar--reg .shopbar__row { justify-content: flex-end !important; }
   /* 卡片组不再被压缩/换行，否则放大后的 5 张卡会溢出盖住右侧资金框 */
