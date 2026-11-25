@@ -11,8 +11,8 @@ android {
         applicationId "com.stronghold.launcher"
         minSdk 30
         targetSdk 34
-        versionCode 3
-        versionName "0.3"
+        versionCode 4
+        versionName "0.3.1"
 
         ndk {
             // 主目标是真机（arm64）。x86_64 那份 libnode.so 仍在 jniLibs 里躺着，
