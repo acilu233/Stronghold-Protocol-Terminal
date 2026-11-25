@@ -546,3 +546,25 @@ html.xj-touch .xj-st-io {
 .xj-homeball.is-dragging { opacity: .95; transition: none; }
 /* 拖动中不想要文字选中 / 长按菜单 */
 .xj-homeball * { pointer-events: none; }
+
+/* ============================================================================
+   规程商店栏：卡片放大 + 整行靠右（2026-11-25 用户要求）
+   ----------------------------------------------------------------------------
+   不碰 game/ 源码，只覆盖上游 public/css/screens/game-reghud.css 的窄屏规则：
+   · @media (max-height:430px) 会把 .scard 压到 1.2rem×1.45rem（手机横屏 392px 命中）
+   · @media (max-width:900px)  会把 .shopbar__row 设成 width:100% + justify-content:center
+   这里：卡片放大到 1.35rem×1.63rem、整行改右对齐、卡片组不压缩不换行。
+   只在窄屏（≤900px 宽）生效，桌面/平板保持上游原样。
+   ============================================================================ */
+@media (max-width: 900px) {
+  /* 卡片放大一圈（1.2 → 1.35rem 宽，1.45 → 1.63rem 高） */
+  .shopbar--reg .scard { width: 1.35rem !important; height: 1.63rem !important; }
+  /* 上游窄屏把整行居中；改成贴右，卡片组跟着贴右边缘 */
+  .shopbar--reg .shopbar__row { justify-content: flex-end !important; }
+  /* 卡片组不再被压缩/换行，否则放大后的 5 张卡会溢出盖住右侧资金框 */
+  .shopbar--reg .shopbar__cards {
+    width: max-content !important;
+    flex-shrink: 0 !important;
+    flex-wrap: nowrap !important;
+  }
+}
