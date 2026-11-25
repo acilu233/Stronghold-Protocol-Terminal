@@ -304,6 +304,12 @@ function ensureMetaServer() {
 
 /** 起一次游戏服务；失败抛给调用方重试。 */
 async function startGameServer() {
+  // ⚠️ 安卓没有独立的 node 可执行文件：上游 v0.4.0 的「版本模拟 worker」默认用
+  //    child_process.fork（server/match/host/index.js:137），在安卓上必然失败 →
+  //    游戏里报「该版本的模拟无法启动」。
+  //    上游支持 SP_MATCH_HOST=worker 切到 worker_threads（server/index.js:163），这里提前设好。
+  //    （不覆盖外部显式设置的值）
+  if (!process.env.SP_MATCH_HOST) process.env.SP_MATCH_HOST = 'worker';
   ensureMetaServer();
   const { startServer } = await import(pathToFileURL(path.join(ROOT, 'server', 'index.js')).href);
   const srv = await startServer({ host: '0.0.0.0' });
