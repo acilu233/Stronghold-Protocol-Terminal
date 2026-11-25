@@ -105,6 +105,10 @@ public class MainActivity extends Activity {
             STATE_DOWNLOADING = 3, STATE_DONE = 4, STATE_ERROR = 5;
     // 对局记录导入：调系统文件选择器后用这个 requestCode 在 onActivityResult 回收
     private static final int REQ_IMPORT_STATS = 9001;
+    // 网页 <input type=file>（v0.4.0「设置 → 界面主题 → 导入主题包」等）的文件选择回收
+    private static final int REQ_FILE_CHOOSER = 9002;
+    /** WebView 文件选择回调：每次都必须 onReceiveValue（取消传 null），否则 WebView 会一直等待、下次点击无反应。 */
+    private android.webkit.ValueCallback<Uri[]> pendingFileChooser;
     private AlertDialog updateDialog;
     private TextView updateMsgTv;
     private ProgressBar updateProgressPb;
@@ -490,6 +494,33 @@ public class MainActivity extends Activity {
             public boolean onConsoleMessage(ConsoleMessage m) {
                 Log.i(TAG, "web: " + m.message() + "  @" + m.sourceId() + ":" + m.lineNumber());
                 return true;
+            }
+
+            /**
+             * 网页 <input type=file> 的接入口。
+             * v0.4.0 的「设置 → 界面主题 → 导入主题包 / 导入文件夹」就是两个 file input：
+             * 不实现这个回调时，安卓 WebView 点了完全没反应（用户报「导入还没接口」）。
+             */
+            @Override
+            public boolean onShowFileChooser(WebView view,
+                                             android.webkit.ValueCallback<Uri[]> filePathCallback,
+                                             FileChooserParams params) {
+                // 上一次没回收的回调先置空，否则 WebView 会一直等它（表现为下一次点击也没反应）
+                if (pendingFileChooser != null) {
+                    pendingFileChooser.onReceiveValue(null);
+                    pendingFileChooser = null;
+                }
+                pendingFileChooser = filePathCallback;
+                try {
+                    Intent intent = params.createIntent();
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    startActivityForResult(intent, REQ_FILE_CHOOSER);
+                    return true;
+                } catch (Throwable t) {
+                    Log.w(TAG, "onShowFileChooser failed", t);
+                    pendingFileChooser = null;
+                    return false;
+                }
             }
         });
 
@@ -2461,6 +2492,18 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQ_FILE_CHOOSER) {
+            // 网页 file input：无论取消还是选中都要回调，否则 WebView 会一直挂着
+            if (pendingFileChooser != null) {
+                Uri[] result = null;
+                if (resultCode == RESULT_OK && data != null) {
+                    result = WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                }
+                pendingFileChooser.onReceiveValue(result);
+                pendingFileChooser = null;
+            }
+            return;
+        }
         if (requestCode == REQ_IMPORT_STATS) {
             if (resultCode == RESULT_OK && data != null && data.getData() != null) {
                 final Uri uri = data.getData();
