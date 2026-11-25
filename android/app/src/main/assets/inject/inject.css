@@ -557,8 +557,10 @@ html.xj-touch .xj-st-io {
    只在窄屏（≤900px 宽）生效，桌面/平板保持上游原样。
    ============================================================================ */
 @media (max-width: 900px) {
-  /* 卡片放大一圈（1.2 → 1.35rem 宽，1.45 → 1.63rem 高） */
-  .shopbar--reg .scard { width: 1.35rem !important; height: 1.63rem !important; }
+  /* 卡片拉齐默认皮肤的 62×90px（1.55rem × 2.25rem；原窄屏是 1.2×1.45rem） */
+  .shopbar--reg .scard { width: 1.55rem !important; height: 2.25rem !important; }
+  /* 升级卡跟着卡片高度走：1.9rem × --up-k = 2.25rem → --up-k = 1.184（上游窄屏是 0.763） */
+  .shopbar--reg .lvcard.lvcard--up { --up-k: 1.184 !important; }
   /* 上游窄屏把整行居中；改成贴右，卡片组跟着贴右边缘 */
   .shopbar--reg .shopbar__row { justify-content: flex-end !important; }
   /* 卡片组不再被压缩/换行，否则放大后的 5 张卡会溢出盖住右侧资金框 */
